@@ -82,7 +82,7 @@ class recurrent_NN(object):
         self.n_iter=200
         self.nprint=20
         self.is_training=True
-        self.is_dropout=False
+        self.is_dropout=True
         #only grabbing a fraction of the data
         self.Nbatch=100
         #makes the tensor flow graph.
@@ -161,9 +161,11 @@ class recurrent_NN(object):
         multi_cell=tf.contrib.rnn.MultiRNNCell(cell_list,state_is_tuple=True)
         rnn_outputs,states=tf.nn.dynamic_rnn(multi_cell,inputs_reduced,dtype=tf.float32)
         #use states (like CNN) since need final output state.
-        #this maps the number of hidden units back to a different number. 
+        #this maps the number of hidden units back to a different number.
+        print(states)
         outputs = fully_connected(states,self.Noutputs,activation_fn=None)
         outputs=outputs[0]
+        print(outputs)
         return outputs
 
     def add_loss_op(self,outputs):
@@ -201,12 +203,13 @@ class recurrent_NN(object):
 
         Args:
             sess: current tensorflow session
-            input_batch: input data np.ndarray of shape (Nbatch, Nfeatures)
+            input_batch: input data np.ndarray of shape (Nbatch, Nstep,Nfeatures)
         Returns:
-            predictions: np.ndarray of shape (Nbatch, 1)
+            predictions: np.ndarray of shape (Nbatch, Nout,Nfeatures,)
         """
         feed = self.create_feed_dict(inputs_batch)
         predictions = sess.run(self.pred, feed_dict=feed)
+
         return predictions
 
 
