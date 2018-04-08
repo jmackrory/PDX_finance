@@ -1,29 +1,27 @@
 #make a Keras model simple wide, with dense input/outputs.
 
-import keras  
+import keras
+import numpy as np
 from keras.models import Sequential 
 from keras.layers import Dense, Reshape, Dropout
 from keras.losses import mean_squared_error, mean_absolute_error
 from keras.layers.advanced_activations import LeakyReLU
 
 #make a Keras model simple wide, with dense input/outputs.
-class deep_network(object):
-    Netf=7
-    Netf=10
+Netf=7
+Nind=10
+
+
+class Config(object):
     def __init__(self):
-        """
-        Wrapper for Keras Network.  Uses multiple layers.
-        Reshapes values from multiple times to a single vector.
-        Network outputs single vector of ETFs as multiple times.
-        """
         self.Nstocks=100
         self.Nfeatures=5
         #number of times in/out.
         self.Ntime_in=130
         self.Ntime_out=65
         #total linear input/outputs
-        self.Ninput=(self.Nstocks*self.Nfeatures+Netf+Nind) *self.Ntime_in
-        self.Noutput=Netf*self.Ntime_out
+        self.Ninput=self.calc_Ninput()
+        self.Noutput=self.calc_Noutput()
         #network parameters
         self.Nhidden=100
         self.Nlayers=2
@@ -32,6 +30,22 @@ class deep_network(object):
         self.Nbatch=100
         self.Nprint=50
         self.train_frac=0.75
+        
+    def calc_Ninput(self):
+        return (self.Nstocks*self.Nfeatures+Netf+Nind) *self.Ntime_in        
+    def calc_Noutput(self):
+        return Netf*self.Ntime_out
+
+class deep_network(object):
+    def __init__(self,config):
+        """
+        Wrapper for Keras Network.  Uses multiple layers.
+        Reshapes values from multiple times to a single vector.
+        Network outputs single vector of ETFs as multiple times.
+        """
+        self.conf=config
+        self.conf.Ninput=self.conf.calc_Ninput()
+        self.conf.Noutput=self.conf.calc_Noutput()
         keras.backend.clear_session()
         self.model=Sequential()
 
@@ -42,21 +56,21 @@ class deep_network(object):
         So inputs will use something like X.reshape(-1).
         And outputs will also need reshape back to form (Ntime_out,Nout)
         """
-        self.model.add(Dense(units=self.Nhidden, activation='linear', input_shape=(self.Ninput,))) #linear mapping at input
+        self.model.add(Dense(units=self.conf.Nhidden, activation='linear', input_shape=(self.conf.Ninput,))) #linear mapping at input
         if (activ=='relu'):
             act = keras.layers.advanced_activations.LeakyReLU( alpha=0.1)               
-            for n in range(self.Nlayers):
-                self.model.add(Dropout(rate=self.dropout_frac, noise_shape=(self.Nbatch,self.Nhidden))) 
-                self.model.add(Dense(units=self.Nhidden,activation='linear'))
+            for n in range(self.conf.Nlayers):
+                self.model.add(Dropout(rate=self.conf.dropout_frac, noise_shape=(self.conf.Nbatch,self.conf.Nhidden))) 
+                self.model.add(Dense(units=self.conf.Nhidden,activation='linear'))
                 #add extra activation layer afterwards
                 self.model.add(act)
         else:
-            for n in range(self.Nlayers):
-                self.model.add(Dropout(rate=self.dropout_frac, noise_shape=(self.Nbatch,self.Nhidden))) 
-                self.model.add(Dense(units=self.Nhidden,activation=activ))
+            for n in range(self.conf.Nlayers):
+                self.model.add(Dropout(rate=self.conf.dropout_frac, noise_shape=(self.conf.Nbatch,self.conf.Nhidden))) 
+                self.model.add(Dense(units=self.conf.Nhidden,activation=activ))
 
         #final linear mapping at output
-        self.model.add(Dense(units=self.Noutput,activation='linear',input_shape=(self.Nhidden,))) #output layer
+        self.model.add(Dense(units=self.conf.Noutput,activation='linear',input_shape=(self.conf.Nhidden,))) #output layer
         self.model.compile(optimizer='adam',loss=mean_squared_error)
 
     def get_training_data(self,X):
@@ -68,17 +82,25 @@ class deep_network(object):
         Picks out a fraction of the input data and trains the rest on that. 
         """
         #select out desired range of columns for training (stocks, etf, ind)
-
-        indx0=np.arange(self.Nstocks)
+        #targets
         Nrow,Ncol=X.shape
-        ind_x=indx0.copy()
-        for i in range(self.Nfeatures-1):
-            ind_x=np.append(i*Nstocks_tot+indx0,ind_x)
-        ind_x=np.append(np.arange(Ncol-Nind-Netf,Ncol),ind_x)
+        
         ind_etf=np.arange(Ncol-Netf,Ncol)
-
+        #inputs
+        Nstocks_tot=Ncol-Nind-Netf
+        if (self.conf.Nstocks>0):
+            indx0=np.arange(self.conf.Nstocks)
+            ind_x=indx0.copy()
+            for i in range(self.conf.Nfeatures-1):
+                ind_x=np.append(i*Nstocks_tot+indx0,ind_x)
+            ind_x=np.append(np.arange(Ncol-Nind-Netf,Ncol),ind_x)
+        else:
+            #just use indicators and past ETFs
+            ind_x=np.arange(Ncol-Nind-Netf,Ncol)
+            
         #make training/test splits
         #train on stock, indicators and ETFs.
+        Nc=int(Nrow*self.conf.train_frac)
         Xtrain = X[:Nc,ind_x]
         ytrain = X[:Nc,ind_etf]
         return Xtrain,ytrain,ind_x
@@ -90,15 +112,15 @@ class deep_network(object):
         Outputs are just future ETFs from input sequence endpoint.
         """
         #starting indices
-        ind=np.arange(len(X[:,0])-self.Ntime_in-self.Ntime_out)
-        rand_ind=np.random.choice(ind,self.Nbatch,replace=False)
-        Xb=np.zeros((self.Nbatch,self.Ninput))
-        yb=np.zeros((self.Nbatch,self.Noutput))
+        ind=np.arange(len(X[:,0])-self.conf.Ntime_in-self.conf.Ntime_out)
+        rand_ind=np.random.choice(ind,self.conf.Nbatch,replace=False)
+        Xb=np.zeros((self.conf.Nbatch,self.conf.Ninput))
+        yb=np.zeros((self.conf.Nbatch,self.conf.Noutput))
         #now populate table (couldn't see nice way to vectorize this assignment, mabe via overloading)
-        for i in range(self.Nbatch):
+        for i in range(self.conf.Nbatch):
             t0=rand_ind[i]
-            t1=t0+self.Ntime_in
-            t2=t1+self.Ntime_out
+            t1=t0+self.conf.Ntime_in
+            t2=t1+self.conf.Ntime_out
             #input all past parameters
             Xb[i]=X[t0:t1].reshape(-1)
             #target future ETFs
@@ -110,15 +132,15 @@ class deep_network(object):
         Grabs random sub-batches of data, then trains.
         Uses two different calls to suppress output.
         """
-        for i in range(self.Nepoch+1):
+        for i in range(self.conf.Nepoch+1):
             #Keras assumes you have a list of X,y pairs for its sampling.
             #Would be memory intensive to set up a whole list for this data.
             #So wrote my own batching.
             Xb,yb,_=self.get_batch(Xtrain,ytrain)
-            if (i)%self.Nprint==0:
-                self.model.fit(Xb,yb, epochs=1, batch_size=self.Nbatch, verbose=1)
+            if (i)%self.conf.Nprint==0:
+                self.model.fit(Xb,yb, epochs=1, batch_size=self.conf.Nbatch, verbose=1)
             else:
-                self.model.fit(Xb,yb, epochs=1, batch_size=self.Nbatch, verbose=0)
+                self.model.fit(Xb,yb, epochs=1, batch_size=self.conf.Nbatch, verbose=0)
             self.model.reset_states()
 
     def avg_predict_from_model(self,X):
@@ -130,42 +152,42 @@ class deep_network(object):
         #Predict on whole of this subset (both "training" and "testing")
 
         #compute total number of predictions to be made. 
-        Nf = len(X) - self.Ntime_in - self.Ntime_out
+        Nf = len(X) - self.conf.Ntime_in - self.conf.Ntime_out
         ypred_tot=np.zeros((len(X),Netf))
         yavg = np.zeros((len(X),1))
         i0=0
-        i1=i0+self.Nbatch
+        i1=i0+self.conf.Nbatch
         #split whole time sequence into sequential batches.
         while (i1 < Nf):
-            X0=np.zeros((self.Nbatch,self.Ninput))
-            for i in range(self.Nbatch):
+            X0=np.zeros((self.conf.Nbatch,self.conf.Ninput))
+            for i in range(self.conf.Nbatch):
                 t0=i0+i
-                t1=t0+self.Ntime_in
+                t1=t0+self.conf.Ntime_in
                 X0[i]=X[t0:t1].reshape(-1)
-            ypred=self.model.predict(X0,batch_size=self.Nbatch)
+            ypred=self.model.predict(X0,batch_size=self.conf.Nbatch)
             #now march along batch, add up predictions.    
-            for i in range(self.Nbatch):
-                t0=self.Ntime_in+i0+i
-                t1=t0+self.Ntime_out
-                yi=ypred[i].reshape( (self.Ntime_out, Netf))
+            for i in range(self.conf.Nbatch):
+                t0=self.conf.Ntime_in+i0+i
+                t1=t0+self.conf.Ntime_out
+                yi=ypred[i].reshape( (self.conf.Ntime_out, Netf))
                 ypred_tot[t0:t1]+= yi
                 yavg[t0:t1]+=1
             self.model.reset_states()    
             i0=i1
-            i1+=self.Nbatch
+            i1+=self.conf.Nbatch
         #predict on the remainder
         Nrem=Nf-i0
-        X0=np.zeros((Nrem,self.Ninput))
+        X0=np.zeros((Nrem,self.conf.Ninput))
         for i in range(Nrem):
             t0=i0+i
-            t1=t0+self.Ntime_in
+            t1=t0+self.conf.Ntime_in
             X0[i]=X[t0:t1].reshape(-1)
         ypred=self.model.predict(X0,batch_size=Nrem)
         #now march along batch, add up predictions.    
         for i in range(Nrem):
-            t0=self.Ntime_in+i0+i
-            t1=t0+self.Ntime_out
-            yi=ypred[i].reshape((self.Ntime_out,Netf))
+            t0=self.conf.Ntime_in+i0+i
+            t1=t0+self.conf.Ntime_out
+            yi=ypred[i].reshape((self.conf.Ntime_out,Netf))
             ypred_tot[t0:t1]+= yi
             yavg[t0:t1]+=1
 
