@@ -17,19 +17,19 @@ class Config(object):
         self.Nstocks=100
         self.Nfeatures=5
         #number of times in/out.
-        self.Ntime_in=130
-        self.Ntime_out=65
+        self.Ntime_in=200
+        self.Ntime_out=100
         #total linear input/outputs
         self.Ninput=self.calc_Ninput()
         self.Noutput=self.calc_Noutput()
         #network parameters
-        self.Nhidden=100
+        self.Nhidden=20
         self.Nlayers=2
         self.dropout_frac=0.5
-        self.Nepoch=1000
+        self.Nepoch=5000
         self.Nbatch=100
         self.Nprint=50
-        self.train_frac=0.75
+        self.train_frac=0.9
         
     def calc_Ninput(self):
         return (self.Nstocks*self.Nfeatures+Netf+Nind) *self.Ntime_in        
@@ -70,8 +70,9 @@ class deep_network(object):
                 self.model.add(Dense(units=self.conf.Nhidden,activation=activ))
 
         #final linear mapping at output
-        self.model.add(Dense(units=self.conf.Noutput,activation='linear',input_shape=(self.conf.Nhidden,))) #output layer
+        self.model.add(Dense(units=self.conf.Noutput,activation='linear',input_shape=(self.conf.Nhidden,))) 
         self.model.compile(optimizer='adam',loss=mean_squared_error)
+        #NOte that to plot you must use a final reshape((Ntime_out,Netf)) to put back in 2D
 
     def get_training_data(self,X):
         """get_training_data
@@ -113,6 +114,7 @@ class deep_network(object):
         """
         #starting indices
         ind=np.arange(len(X[:,0])-self.conf.Ntime_in-self.conf.Ntime_out)
+        #pick a random index to start sequence at.
         rand_ind=np.random.choice(ind,self.conf.Nbatch,replace=False)
         Xb=np.zeros((self.conf.Nbatch,self.conf.Ninput))
         yb=np.zeros((self.conf.Nbatch,self.conf.Noutput))
@@ -122,6 +124,7 @@ class deep_network(object):
             t1=t0+self.conf.Ntime_in
             t2=t1+self.conf.Ntime_out
             #input all past parameters
+            #use reshape(-1) to drop from 2D to 1D.  
             Xb[i]=X[t0:t1].reshape(-1)
             #target future ETFs
             yb[i]=y[t1:t2].reshape(-1)
