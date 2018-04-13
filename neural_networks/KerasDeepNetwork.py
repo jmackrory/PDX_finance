@@ -32,8 +32,14 @@ class Config(object):
         self.train_frac=0.9
         
     def calc_Ninput(self):
+        """calc_Ninput
+        Computes number of flat inputs. 
+        """
         return (self.Nstocks*self.Nfeatures+Netf+Nind) *self.Ntime_in        
     def calc_Noutput(self):
+        """calc_Noutput
+        Computes number of flat outputs. 
+        """
         return Netf*self.Ntime_out
 
 class deep_network(object):
@@ -78,7 +84,7 @@ class deep_network(object):
         """get_training_data
         Selects out a subset of the training data.
         Requires monkey around with column indices as input data is of form:
-        [ ...stocks..., ETFS, Indicators ]
+        [ ETFS, Indicators, ...stocks...,  ]
         Those last two are static, and known.
         Picks out a fraction of the input data and trains the rest on that. 
         """
@@ -86,18 +92,15 @@ class deep_network(object):
         #targets
         Nrow,Ncol=X.shape
         
-        ind_etf=np.arange(Ncol-Netf,Ncol)
+        ind_etf=np.arange(Netf)
         #inputs
         Nstocks_tot=Ncol-Nind-Netf
+        ind_x=np.arange(Nind+Netf)        
         if (self.conf.Nstocks>0):
             indx0=np.arange(self.conf.Nstocks)
-            ind_x=indx0.copy()
+            ind_x=ind_x.append(indx0)
             for i in range(self.conf.Nfeatures-1):
                 ind_x=np.append(i*Nstocks_tot+indx0,ind_x)
-            ind_x=np.append(np.arange(Ncol-Nind-Netf,Ncol),ind_x)
-        else:
-            #just use indicators and past ETFs
-            ind_x=np.arange(Ncol-Nind-Netf,Ncol)
             
         #make training/test splits
         #train on stock, indicators and ETFs.
