@@ -1,10 +1,37 @@
-#make a Keras model simple wide, with dense input/outputs.
-
+#make a Keras model, with RNN with dense input/outputs.
+#Borrowing some from Keras docs, and "https://machinelearningmastery.com/time-series-prediction-lstm-recurrent-neural-networks-python-keras/"
 import keras  
 from keras.models import Sequential 
 from keras.layers import Dense, RNN, LSTM, StackedRNNCells, Reshape, Dropout
 from keras.losses import mean_squared_error, mean_absolute_error
 from keras.layers.advanced_activations import LeakyReLU
+import numpy as np
+
+Netf=7
+Nind=10
+Nstocks_tot=710
+
+class RNNConfig(object):
+    def __init__(self):
+        self.Nstocks=20
+        self.Nfeatures=2
+        #number of times in/out.
+        self.Ntime_in=20
+        self.Ntime_out=10
+        #total linear input/outputs
+        self.Ninput=self.calc_Ninput()
+        self.Noutput=Netf
+        #network parameters
+        self.Nhidden=20
+        self.Nlayers=2
+        self.dropout_frac=0.5
+        self.Nepoch=100
+        self.Nbatch=100
+        self.Nprint=50
+        self.train_frac=0.75
+
+    def calc_Ninput(self):
+        return (self.Nstocks*self.Nfeatures+Netf+Nind)
 
 class KerasRecurrentNetwork(object):
     """
@@ -30,7 +57,6 @@ class KerasRecurrentNetwork(object):
         keras.backend.clear_session()
         self.model=Sequential()
 
-
     #make a Keras model two layer LSTM, with dense input/outputs
     #Use the sequence-to-sequence example.  
     def make_network(self,activ='relu'):
@@ -40,46 +66,46 @@ class KerasRecurrentNetwork(object):
 
         """
         keras.backend.clear_session()
-        model=Sequential()
-        model.add(Dense(units=self.conf.Nhidden, activation='linear',
+        self.model=Sequential()
+        self.model.add(Dense(units=self.conf.Nhidden, activation='linear',
                         input_shape=(self.conf.Ntime_in,self.conf.Ninput))) #linear mapping at input
         if (activ=='relu'):
             act = keras.layers.advanced_activations.LeakyReLU(alpha=0.1)               
             for n in range(self.conf.Nlayers-1):
-                model.add(Dropout(rate=self.conf.dropout_frac,
+                self.model.add(Dropout(rate=self.conf.dropout_frac,
                                   noise_shape=(self.conf.Nbatch,1,self.conf.Nhidden))) #dropout at input                
-                model.add(LSTM(units=self.conf.Nhidden,
+                self.model.add(LSTM(units=self.conf.Nhidden,
                                activation='linear',return_sequences=True))
-                model.add(act)            #add extra activation layer afterwards
+                self.model.add(act)            #add extra activation layer afterwards
             #final LSTM layer
-            model.add(Dropout(rate=self.conf.dropout_frac,
+            self.model.add(Dropout(rate=self.conf.dropout_frac,
                               noise_shape=(self.conf.Nbatch,1,self.conf.Nhidden))) #dropout at input                            
-            model.add(LSTM(units=self.conf.Nhidden,
+            self.model.add(LSTM(units=self.conf.Nhidden,
                            activation='linear',return_sequences=True))
-            model.add(act)
+            self.model.add(act)
         else:
             for n in range(self.conf.Nlayers-1):
                 #dropout at input                                        
-                model.add(Dropout(rate=self.conf.dropout_frac,
+                self.model.add(Dropout(rate=self.conf.dropout_frac,
                                   noise_shape=(self.conf.Nbatch,1,self.conf.Nhidden))) 
-                model.add(LSTM(units=self.conf.Nhidden,
+                self.model.add(LSTM(units=self.conf.Nhidden,
                                activation=activ,return_sequences=True))
-            model.add(Dropout(rate=self.conf.dropout_frac,
+            self.model.add(Dropout(rate=self.conf.dropout_frac,
                               noise_shape=(self.conf.Nbatch,1,self.conf.Nhidden))) 
-            model.add(LSTM(units=self.conf.Nhidden,activation=activ,return_sequences=True))
+            self.model.add(LSTM(units=self.conf.Nhidden,activation=activ,return_sequences=True))
             
         #Now flatten that sequence of outputs down.           
-        model.add(Reshape(input_shape=(self.conf.Ntime_in,self.conf.Nhidden),
+        self.model.add(Reshape(input_shape=(self.conf.Ntime_in,self.conf.Nhidden),
                           target_shape=(self.conf.Ntime_in*self.conf.Nhidden,)))
         #linear mapping to change dimension at output
-        model.add(Dense(units=self.conf.Noutput*self.conf.Ntime_out, activation='linear',
+        self.model.add(Dense(units=self.conf.Noutput*self.conf.Ntime_out, activation='linear',
                         input_shape=(self.conf.Ntime_in*self.conf.Nhidden,))) 
         #reshape again that sequence down.           
-        model.add(Reshape(input_shape=(self.conf.Noutput,),
+        self.model.add(Reshape(input_shape=(self.conf.Noutput,),
                           target_shape=(self.conf.Ntime_out,self.conf.Noutput)))
 
-        model.compile(optimizer='adam',loss=mean_squared_error)
-        return model
+        self.model.compile(optimizer='adam',loss=mean_squared_error)
+
 
     def get_training_data(self,X):
         """get_training_data
@@ -90,21 +116,51 @@ class KerasRecurrentNetwork(object):
         Picks out a fraction of the input data and trains the rest on that. 
         """
         #select out desired range of columns for training (stocks, etf, ind)
-        indx0=np.arange(self.conf.Nstocks)
-        Nrow,Ncol=X.shape
+        # indx0=np.arange(self.conf.Nstocks)
+        # Nrow,Ncol=X.shape
+        
+        # ind_etf=np.arange(Netf)
+        # ind_x=np.arange(Nind+Netf)        
+        # if (self.conf.Nstocks>0):
+        #     indx0=np.arange(self.conf.Nstocks)
+        #     ind_x=np.append(ind_x,indx0)
+        #     for i in range(self.conf.Nfeatures-1):
+        #         ind_x=np.append(i*Nstocks_tot+indx0,ind_x)
+        Nrow,Ncol=X.shape        
         Nc=int(self.conf.train_frac*Nrow)
-        ind_x=indx0.copy()
-        for i in range(self.conf.Nfeatures-1):
-            ind_x=np.append(i*Nstocks_tot+indx0,ind_x)
-        ind_x=np.append(np.arange(Ncol-Nind-Netf,Ncol),ind_x)
-        ind_etf=np.arange(Ncol-Netf,Ncol)
-
+        self.get_training_indices(X)
+        
         #make training/test splits
         #train on stock, indicators and ETFs.
-        Xtrain = X[:Nc,ind_x]
-        ytrain = X[:Nc,ind_etf]
-        return Xtrain,ytrain,ind_x
-        
+        Xtrain = X[:Nc,self.ind_x]
+        ytrain = X[:Nc,self.ind_y]
+        return Xtrain,ytrain
+
+    def get_training_indices(self,X):
+        """get_training_data
+        Selects out a subset of the training data.
+        Requires monkey around with column indices as input data is of form:
+        [ ...stocks..., ETFS, Indicators ]
+        Those last two are static, and known.
+        Picks out a fraction of the input data and trains the rest on that. 
+        """
+        #select out desired range of columns for training (stocks, etf, ind)
+        indx0=np.arange(self.conf.Nstocks)
+        Nrow,Ncol=X.shape
+        ind_etf=np.arange(Netf)
+        ind_x=np.arange(Nind+Netf)        
+        if (self.conf.Nstocks>0):
+            indx0=np.arange(self.conf.Nstocks)
+            ind_x=np.append(ind_x,indx0)
+            for i in range(self.conf.Nfeatures-1):
+                ind_x=np.append(i*Nstocks_tot+indx0,ind_x)
+        self.ind_x = ind_x
+        self.ind_y = ind_etf
+
+
+
+    
+    
     def get_batch(self,X,y):
         """get_batch
         Returns a randomly selected batch of input/output sequences.
@@ -136,6 +192,7 @@ class KerasRecurrentNetwork(object):
             #Keras assumes you have a list of X,y pairs for its sampling.
             #Would be memory intensive to set up a whole list for this data.
             #So wrote my own batching.
+            #Should really finish Batch generator.
             Xb,yb,_=self.get_batch(Xtrain,ytrain)
             if (i)%self.conf.Nprint==0:
                 self.model.fit(Xb,yb, epochs=1, batch_size=self.conf.Nbatch, verbose=1)
