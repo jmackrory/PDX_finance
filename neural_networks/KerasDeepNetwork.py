@@ -12,7 +12,7 @@ Netf=7
 Nind=10
 
 
-class Config(object):
+class deep_network_config(object):
     def __init__(self):
         self.Nstocks=100
         self.Nfeatures=5

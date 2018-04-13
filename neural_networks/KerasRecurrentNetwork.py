@@ -13,8 +13,8 @@ Nstocks_tot=710
 
 class RNNConfig(object):
     def __init__(self):
-        self.Nstocks=20
-        self.Nfeatures=2
+        self.Nstocks=1
+        self.Nfeatures=1
         #number of times in/out.
         self.Ntime_in=20
         self.Ntime_out=10
@@ -25,13 +25,15 @@ class RNNConfig(object):
         self.Nhidden=20
         self.Nlayers=2
         self.dropout_frac=0.5
+        self.lr=0.001
         self.Nepoch=100
         self.Nbatch=100
-        self.Nprint=50
+        self.Nprint=10
         self.train_frac=0.75
 
     def calc_Ninput(self):
-        return (self.Nstocks*self.Nfeatures+Netf+Nind)
+        y=self.Nstocks*self.Nfeatures+Netf+Nind
+        return y
 
 class KerasRecurrentNetwork(object):
     """
@@ -71,28 +73,28 @@ class KerasRecurrentNetwork(object):
                         input_shape=(self.conf.Ntime_in,self.conf.Ninput))) #linear mapping at input
         if (activ=='relu'):
             act = keras.layers.advanced_activations.LeakyReLU(alpha=0.1)               
-            for n in range(self.conf.Nlayers-1):
+            for n in range(self.conf.Nlayers):
                 self.model.add(Dropout(rate=self.conf.dropout_frac,
                                   noise_shape=(self.conf.Nbatch,1,self.conf.Nhidden))) #dropout at input                
                 self.model.add(LSTM(units=self.conf.Nhidden,
                                activation='linear',return_sequences=True))
                 self.model.add(act)            #add extra activation layer afterwards
             #final LSTM layer
-            self.model.add(Dropout(rate=self.conf.dropout_frac,
-                              noise_shape=(self.conf.Nbatch,1,self.conf.Nhidden))) #dropout at input                            
-            self.model.add(LSTM(units=self.conf.Nhidden,
-                           activation='linear',return_sequences=True))
-            self.model.add(act)
+            # self.model.add(Dropout(rate=self.conf.dropout_frac,
+            #                   noise_shape=(self.conf.Nbatch,1,self.conf.Nhidden))) #dropout at input                            
+            # self.model.add(LSTM(units=self.conf.Nhidden,
+            #                activation='linear',return_sequences=True))
+            # self.model.add(act)
         else:
-            for n in range(self.conf.Nlayers-1):
+            for n in range(self.conf.Nlayers):
                 #dropout at input                                        
                 self.model.add(Dropout(rate=self.conf.dropout_frac,
                                   noise_shape=(self.conf.Nbatch,1,self.conf.Nhidden))) 
                 self.model.add(LSTM(units=self.conf.Nhidden,
                                activation=activ,return_sequences=True))
-            self.model.add(Dropout(rate=self.conf.dropout_frac,
-                              noise_shape=(self.conf.Nbatch,1,self.conf.Nhidden))) 
-            self.model.add(LSTM(units=self.conf.Nhidden,activation=activ,return_sequences=True))
+            # self.model.add(Dropout(rate=self.conf.dropout_frac,
+            #                   noise_shape=(self.conf.Nbatch,1,self.conf.Nhidden))) 
+            # self.model.add(LSTM(units=self.conf.Nhidden,activation=activ,return_sequences=True))
             
         #Now flatten that sequence of outputs down.           
         self.model.add(Reshape(input_shape=(self.conf.Ntime_in,self.conf.Nhidden),
@@ -103,8 +105,8 @@ class KerasRecurrentNetwork(object):
         #reshape again that sequence down.           
         self.model.add(Reshape(input_shape=(self.conf.Noutput,),
                           target_shape=(self.conf.Ntime_out,self.conf.Noutput)))
-
-        self.model.compile(optimizer='adam',loss=mean_squared_error)
+        adam=keras.optimizers.adam(lr=self.conf.lr, clipnorm=1)
+        self.model.compile(optimizer=adam,loss=mean_squared_error)
 
 
     def get_training_data(self,X):
@@ -157,9 +159,6 @@ class KerasRecurrentNetwork(object):
         self.ind_x = ind_x
         self.ind_y = ind_etf
 
-
-
-    
     
     def get_batch(self,X,y):
         """get_batch
@@ -216,11 +215,11 @@ class KerasRecurrentNetwork(object):
         i1=i0+self.conf.Nbatch
         #split whole time sequence into sequential batches.
         while (i1 < Nf):
-            X0=np.zeros((self.conf.Nbatch,self.conf.Ninput))
+            X0=np.zeros((self.conf.Nbatch,self.conf.Ntime_in,self.conf.Ninput))
             for i in range(self.conf.Nbatch):
                 t0=i0+i
                 t1=t0+self.conf.Ntime_in
-                X0[i]=X[t0:t1].reshape(-1)
+                X0[i]=X[t0:t1,self.ind_x]
             ypred=self.model.predict(X0,batch_size=self.conf.Nbatch)
             #now march along batch, add up predictions.    
             for i in range(self.conf.Nbatch):
@@ -234,11 +233,11 @@ class KerasRecurrentNetwork(object):
             i1+=self.conf.Nbatch
         #predict on the remainder
         Nrem=Nf-i0
-        X0=np.zeros((Nrem,self.conf.Ninput))
+        X0=np.zeros((Nrem,self.conf.Ntime_in,self.conf.Ninput))
         for i in range(Nrem):
             t0=i0+i
             t1=t0+self.conf.Ntime_in
-            X0[i]=X[t0:t1].reshape(-1)
+            X0[i]=X[t0:t1,self.ind_x]
         ypred=self.model.predict(X0,batch_size=Nrem)
         #now march along batch, add up predictions.    
         for i in range(Nrem):
